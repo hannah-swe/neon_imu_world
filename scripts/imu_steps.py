@@ -28,9 +28,7 @@ print(f"Found {len(subject_dirs)} subject folder(s) under {RAW_ROOT}")
 
 # 2) Iterate subjects (linear)
 for subject_dir in subject_dirs:
-    print("\n" + "=" * 80)
     print(f"Processing {subject_dir.name}")
-    print("=" * 80)
 
     # 2.1) Locate IMU CSV
     imu_path = subject_dir / IMU_FILENAME
@@ -84,9 +82,7 @@ for subject_dir in subject_dirs:
     acc_world_g = transform_imu_to_world(acc_g, q_wxyz)
     acc_world_mag_g = np.linalg.norm(acc_world_g, axis=1)
 
-    # ----------------------------
     # PLOTS
-    # ----------------------------
     if SHOW_PLOTS:
         # A) CSV yaw vs derived yaw
         plt.figure()
