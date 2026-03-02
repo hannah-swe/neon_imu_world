@@ -71,27 +71,30 @@ for subject_dir in subject_dirs:
     # yaw = atan2(world_y, world_x) + 90°, wrapped to [-180, 180]
     heading_neutral_in_imu = np.array([0.0, -1.0, 0.0])  # -Y axis in IMU
 
+    # calculate heading vectors of IMU in world coordinates, i.e. direction the wearer's face is pointing
     heading_world = transform_imu_to_world(heading_neutral_in_imu, q_wxyz)  # (N,3)
     heading_world_unit = heading_world / np.maximum(
         np.linalg.norm(heading_world, axis=1, keepdims=True), 1e-12
     )
 
+    # get angle of projection on x-y-plane
     heading_angle_deg = np.degrees(np.arctan2(heading_world_unit[:, 1], heading_world_unit[:, 0]))
     heading_angle_deg = wrap_deg(heading_angle_deg + 90.0)
 
-    # 2.7) Error between derived heading angle and CSV yaw (should be ~0)
+    # 2.7) Error between derived heading angle and CSV yaw (should be ~0;
+    # is my heading interpretation the same as pupil labs yaw?)
     err = wrap_deg(heading_angle_deg - csv_yaw_wrapped)
     rms = float(np.sqrt(np.mean(err**2)))
     print(f"  Yaw vs heading RMS error: {rms:.8f} deg")
 
-    # 2.8) Accelerations (in g) -> world + magnitude
+    # 2.8) Accelerations (in g) -> world + magnitude (~ 1 g is typical with head held still)
     acc_g = df[["acceleration x [g]", "acceleration y [g]", "acceleration z [g]"]].to_numpy(dtype=float)
     acc_world_g = transform_imu_to_world(acc_g, q_wxyz)
     acc_world_mag_g = np.linalg.norm(acc_world_g, axis=1)
 
     # Plots:
     if SHOW_PLOTS:
-        # A) CSV yaw vs derived yaw
+        # A) Quality check: CSV yaw vs derived yaw
         plt.figure()
         sns.lineplot(x=t_s, y=csv_yaw_wrapped, label="CSV yaw [deg]", linewidth=7, alpha=0.7)
         sns.lineplot(x=t_s, y=heading_angle_deg, label="Derived yaw from -Y (+90°) [deg]", linewidth=1.75)
@@ -102,7 +105,7 @@ for subject_dir in subject_dirs:
         sns.despine()
         plt.show()
 
-        # B) Error plot
+        # B) Quality check: Error plot (error of plot A)
         plt.figure()
         sns.lineplot(x=t_s, y=err, linewidth=1.5)
         plt.xlabel("time [s]")
@@ -113,9 +116,9 @@ for subject_dir in subject_dirs:
 
         # C) Heading vector components in world
         plt.figure()
-        sns.lineplot(x=t_s, y=heading_world_unit[:, 0], label="heading x", linewidth=2.5)
-        sns.lineplot(x=t_s, y=heading_world_unit[:, 1], label="heading y", linewidth=2.5)
-        sns.lineplot(x=t_s, y=heading_world_unit[:, 2], label="heading z", linewidth=2.5)
+        sns.lineplot(x=t_s, y=heading_world_unit[:, 0], label="heading x (roll)", linewidth=2.5)
+        sns.lineplot(x=t_s, y=heading_world_unit[:, 1], label="heading y (yaw)", linewidth=2.5)
+        sns.lineplot(x=t_s, y=heading_world_unit[:, 2], label="heading z (pitch)", linewidth=2.5)
         plt.xlabel("time [s]")
         plt.ylabel("unit heading component")
         plt.title(f"{subject_dir.name} – Heading vector (world)")
@@ -123,7 +126,7 @@ for subject_dir in subject_dirs:
         sns.despine()
         plt.show()
 
-        # D) Acceleration magnitude in world (g)
+        # D) Acceleration magnitude in world (g), 1 g is typical with head held still
         plt.figure()
         sns.lineplot(x=t_s, y=acc_world_mag_g, linewidth=1.5)
         plt.axhline(1.0, linestyle="--", color="grey")
@@ -133,7 +136,7 @@ for subject_dir in subject_dirs:
         sns.despine()
         plt.show()
 
-        # E) Z-component of heading over time (pitch tendency)
+        # E) z-component of heading over time (pitch tendency)
         plt.figure()
         sns.lineplot(x=t_s, y=heading_world_unit[:, 2], linewidth=2.5)
         plt.xlabel("time [s]")
