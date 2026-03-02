@@ -1,10 +1,11 @@
 from pathlib import Path
-
 import numpy as np
 import matplotlib.pyplot as plt
-
+import seaborn as sns
 from neon_imu.loaders import load_imu_csv
 from neon_imu.transforms import quaternion_norms, transform_imu_to_world
+from neon_imu.plot_config import setup_plot_style
+setup_plot_style()
 
 
 def wrap_deg(a: np.ndarray) -> np.ndarray:
@@ -18,9 +19,8 @@ def wrap_deg(a: np.ndarray) -> np.ndarray:
 RAW_ROOT = Path("data/raw")
 SUBJECT_GLOB = "sub-*"
 IMU_FILENAME = "imu.csv"
-
 SHOW_PLOTS = True
-# ----------------------------
+
 
 # 1) Discover subject folders
 subject_dirs = sorted([p for p in RAW_ROOT.glob(SUBJECT_GLOB) if p.is_dir()])
@@ -82,46 +82,46 @@ for subject_dir in subject_dirs:
     acc_world_g = transform_imu_to_world(acc_g, q_wxyz)
     acc_world_mag_g = np.linalg.norm(acc_world_g, axis=1)
 
-    # PLOTS
+    # Plots:
     if SHOW_PLOTS:
         # A) CSV yaw vs derived yaw
         plt.figure()
-        plt.plot(t_s, csv_yaw_wrapped, label="CSV yaw [deg]")
-        plt.plot(t_s, heading_angle_deg, label="Derived yaw from -Y (+90°) [deg]", alpha=0.85)
+        sns.lineplot(x=t_s, y=csv_yaw_wrapped, label="CSV yaw [deg]", linewidth=7, alpha=0.7)
+        sns.lineplot(x=t_s, y=heading_angle_deg, label="Derived yaw from -Y (+90°) [deg]", linewidth=1.75)
         plt.xlabel("time [s]")
         plt.ylabel("deg (wrapped to [-180, 180])")
         plt.title(f"{subject_dir.name} – CSV yaw vs derived yaw")
         plt.legend()
-        plt.tight_layout()
+        sns.despine()
         plt.show()
 
         # B) Error plot
         plt.figure()
-        plt.plot(t_s, err)
+        sns.lineplot(x=t_s, y=err, linewidth=1.5)
         plt.xlabel("time [s]")
         plt.ylabel("deg")
         plt.title(f"{subject_dir.name} – Error (derived - CSV), RMS={rms:.8f}°")
-        plt.tight_layout()
+        sns.despine()
         plt.show()
 
         # C) Heading vector components in world
         plt.figure()
-        plt.plot(t_s, heading_world_unit[:, 0], label="heading x")
-        plt.plot(t_s, heading_world_unit[:, 1], label="heading y")
-        plt.plot(t_s, heading_world_unit[:, 2], label="heading z")
+        sns.lineplot(x=t_s, y=heading_world_unit[:, 0], label="heading x", linewidth=2.5)
+        sns.lineplot(x=t_s, y=heading_world_unit[:, 1], label="heading y", linewidth=2.5)
+        sns.lineplot(x=t_s, y=heading_world_unit[:, 2], label="heading z", linewidth=2.5)
         plt.xlabel("time [s]")
         plt.ylabel("unit heading component")
         plt.title(f"{subject_dir.name} – Heading vector (world)")
         plt.legend()
-        plt.tight_layout()
+        sns.despine()
         plt.show()
 
         # D) Acceleration magnitude in world (g)
         plt.figure()
-        plt.plot(t_s, acc_world_mag_g)
+        sns.lineplot(x=t_s, y=acc_world_mag_g, linewidth=1.5)
         plt.axhline(1.0, linestyle="--", color="grey")
         plt.xlabel("time [s]")
         plt.ylabel("||acc|| [g]")
         plt.title(f"{subject_dir.name} – Acc magnitude (world) [g]")
-        plt.tight_layout()
+        sns.despine()
         plt.show()
