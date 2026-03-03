@@ -8,22 +8,32 @@ from neon_imu.transforms import quaternion_norms, transform_imu_to_world
 from neon_imu.plot_config import setup_plot_style
 setup_plot_style()
 
-"""This script:
+"""
+This script:
     1. reads and checks orientation (quaternions)
     2. derivatives the rotation from IMU to world coordinates
     3. rotates acceleration to world system
     
-    IMU-axis convention:
+IMU-axis convention:
     x = right <-> left
     y = back <-> front
     z = up <-> down
-    """
+"""
 
 # Configuration:
 RAW_ROOT = Path("data/raw")
+OUTPUT_ROOT = Path("data/processed")
 SUBJECT_GLOB = "sub-*"
 IMU_FILENAME = "imu.csv"
 SHOW_PLOTS = True
+SAVE_PLOTS = False
+
+# Baseline timestamps for relative head movements
+BASELINE_TS_NS = {
+    "sub-997": 1767524149769973658,
+    "sub-998": 1771841527840486602,
+    "sub-999": 1771841127283972967
+}
 
 
 def wrap_deg(a: np.ndarray) -> np.ndarray:
@@ -87,7 +97,19 @@ for subject_dir in subject_dirs:
     rms = float(np.sqrt(np.mean(err**2)))
     print(f"  Yaw vs heading RMS error: {rms:.8f} deg")
 
-    # 2.8) Accelerations (in g) -> world + magnitude (~ 1 g is typical with head held still)
+    # 2.8) Relative yaw (baseline: timestamp per subject from video data by look
+    # Baseline timestamp für dieses Subject
+    baseline_ts = BASELINE_TS_NS[subject_dir.name]
+    # IMU timestamps als numpy array
+    imu_t_ns = df["timestamp [ns]"].to_numpy(np.int64)
+    # Index des nächsten Samples finden
+    baseline_idx = np.argmin(np.abs(imu_t_ns - baseline_ts))
+    print("Baseline index:", baseline_idx)
+    print("Baseline timestamp (nearest):", imu_t_ns[baseline_idx])
+    yaw_rel_csv = wrap_deg(csv_yaw_wrapped - csv_yaw_wrapped[baseline_idx])
+    yaw_rel_derived = wrap_deg(heading_angle_deg - heading_angle_deg[baseline_idx])
+
+    # 2.9) Accelerations (in g) -> world + magnitude (~ 1 g is typical with head held still)
     acc_g = df[["acceleration x [g]", "acceleration y [g]", "acceleration z [g]"]].to_numpy(dtype=float)
     acc_world_g = transform_imu_to_world(acc_g, q_wxyz)
     acc_world_mag_g = np.linalg.norm(acc_world_g, axis=1)
@@ -103,18 +125,36 @@ for subject_dir in subject_dirs:
         plt.title(f"{subject_dir.name} – CSV yaw vs derived yaw")
         plt.legend()
         sns.despine()
+        if SAVE_PLOTS:
+            plt.savefig(f"{OUTPUT_ROOT}/plots/{subject_dir.name}/csv_yaw_vs_derived_yaw.png", dpi=400)
         plt.show()
 
-        # B) Quality check: Error plot (error of plot A)
+        # B) Yaw relative to baseline
+        plt.figure()
+        sns.lineplot(x=t_s, y=yaw_rel_csv, label="CSV yaw rel [deg]", linewidth=7, alpha=0.7)
+        sns.lineplot(x=t_s, y=yaw_rel_derived, label="Derived yaw rel [deg]", linewidth=1.75)
+        plt.axhline(0, linestyle="--", color="grey")
+        plt.xlabel("time [s]")
+        plt.ylabel("deg (relative to chosen baseline)")
+        plt.title(f"{subject_dir.name} – Relative yaw")
+        plt.legend()
+        sns.despine()
+        if SAVE_PLOTS:
+            plt.savefig(f"{OUTPUT_ROOT}/plots/{subject_dir.name}/relative_yaw_baseline_first.png", dpi=400)
+        plt.show()
+
+        # C) Quality check: Error plot (error of plot A)
         plt.figure()
         sns.lineplot(x=t_s, y=err, linewidth=1.5)
         plt.xlabel("time [s]")
         plt.ylabel("deg")
         plt.title(f"{subject_dir.name} – Error (derived - CSV), RMS={rms:.8f}°")
         sns.despine()
+        if SAVE_PLOTS:
+            plt.savefig(f"{OUTPUT_ROOT}/plots/{subject_dir.name}/yaw_error.png", dpi=400)
         plt.show()
 
-        # C) Heading vector components in world
+        # D) Heading vector components in world
         plt.figure()
         sns.lineplot(x=t_s, y=heading_world_unit[:, 0], label="heading x (roll)", linewidth=2.5)
         sns.lineplot(x=t_s, y=heading_world_unit[:, 1], label="heading y (yaw)", linewidth=2.5)
@@ -124,9 +164,11 @@ for subject_dir in subject_dirs:
         plt.title(f"{subject_dir.name} – Heading vector (world)")
         plt.legend()
         sns.despine()
+        if SAVE_PLOTS:
+            plt.savefig(f"{OUTPUT_ROOT}/plots/{subject_dir.name}/heading_vectors.png", dpi=400)
         plt.show()
 
-        # D) Acceleration magnitude in world (g), 1 g is typical with head held still
+        # E) Acceleration magnitude in world (g), 1 g is typical with head held still
         plt.figure()
         sns.lineplot(x=t_s, y=acc_world_mag_g, linewidth=1.5)
         plt.axhline(1.0, linestyle="--", color="grey")
@@ -134,15 +176,8 @@ for subject_dir in subject_dirs:
         plt.ylabel("||acc|| [g]")
         plt.title(f"{subject_dir.name} – Acc magnitude (world) [g]")
         sns.despine()
-        plt.show()
-
-        # E) z-component of heading over time (pitch tendency)
-        plt.figure()
-        sns.lineplot(x=t_s, y=heading_world_unit[:, 2], linewidth=2.5)
-        plt.xlabel("time [s]")
-        plt.ylabel("heading z-component")
-        plt.title(f"{subject_dir.name} – Heading Z component (vertical tilt)")
-        plt.axhline(0, linestyle="--", color="grey")
+        if SAVE_PLOTS:
+            plt.savefig(f"{OUTPUT_ROOT}/plots/{subject_dir.name}/acceleration_magnitude_in_g.png", dpi=400)
         plt.show()
 
         # F) Heading directions projected onto horizontal plane
@@ -172,4 +207,7 @@ for subject_dir in subject_dirs:
         sm.set_array([])
         cbar = plt.colorbar(sm, ax=ax)
         cbar.set_label("time [s]")
+        sns.despine()
+        if SAVE_PLOTS:
+            plt.savefig(f"{OUTPUT_ROOT}/plots/{subject_dir.name}/heading_direction_horizontal_plane.png", dpi=400)
         plt.show()
