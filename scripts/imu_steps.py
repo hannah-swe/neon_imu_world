@@ -38,10 +38,16 @@ BASELINE_TS_NS = {
     "sub-999": 1771841127283972967
 }
 
-
+# Helper to either wrap the angles from -180 to 180 degrees or get the continuous one (possibly over 180)
 def wrap_deg(a: np.ndarray) -> np.ndarray:
     # Wrap angles in degrees to [-180, 180]
     return (a + 180) % 360 - 180
+
+def unwrap_deg(angle_deg: np.ndarray) -> np.ndarray:
+    # Unwrap a degree angle timeseries to be continuous
+    ang_rad = np.deg2rad(angle_deg)
+    ang_unwrapped = np.unwrap(ang_rad) # removes +/-pi jumps
+    return np.rad2deg(ang_unwrapped)
 
 
 # 1) Discover subject folders
@@ -102,14 +108,19 @@ for subject_dir in subject_dirs:
         heading_rel_world_unit[:, 1], heading_rel_world_unit[:, 0]
     ))
     yaw_rel_derived = wrap_deg(yaw_rel_derived - 90.0)
+    yaw_rel_derived_unwrapped = np.unwrap(yaw_rel_derived)
     # CSV yaw relative (baseline subtraction, wrapped)
     yaw_rel_csv = wrap_deg(csv_yaw_wrapped - csv_yaw_wrapped[baseline_idx])
+    yaw_rel_csv_unwrapped = unwrap_deg(yaw_rel_csv)
 
     # 2.8) Error between relative derived heading angle and CSV yaw (should be ~0;
     # is my heading interpretation the same as pupil labs yaw?)
     err_rel = wrap_deg(yaw_rel_derived - yaw_rel_csv)
     rms_rel = float(np.sqrt(np.mean(err_rel**2)))
     print(f"  Relative yaw RMS (derived vs CSV): {rms_rel:.8f} deg")
+    err_rel_unwrapped = unwrap_deg(yaw_rel_derived_unwrapped - yaw_rel_csv_unwrapped)
+    rms_rel_unwrapped = float(np.sqrt(np.mean(err_rel_unwrapped**2)))
+    print(f"  Relative yaw RMS unwrapped (derived vs CSV): {rms_rel_unwrapped:.8f} deg")
 
     # 2.9) Accelerations (in g) -> world + magnitude (~ 1 g is typical with head held still)
     acc_g = df[["acceleration x [g]", "acceleration y [g]", "acceleration z [g]"]].to_numpy(dtype=float)
@@ -126,8 +137,8 @@ for subject_dir in subject_dirs:
         # A) Yaw relative to baseline
         plt.figure()
         plt.axhline(0, linestyle="--", color="grey", alpha=0.8)
-        sns.lineplot(x=t_s, y=yaw_rel_csv, label="CSV yaw rel [deg]", linewidth=1.75)
-        sns.lineplot(x=t_s, y=yaw_rel_derived, label="Derived yaw rel [deg]", linewidth=1.75)
+        sns.lineplot(x=t_s, y=yaw_rel_csv_unwrapped, label="CSV yaw rel [deg]", linewidth=1.75)
+        sns.lineplot(x=t_s, y=yaw_rel_derived_unwrapped, label="Derived yaw rel [deg]", linewidth=1.75)
         plt.xlabel("time [s]")
         plt.ylabel("deg (relative to chosen baseline)")
         plt.title(f"{subject_dir.name} – Relative yaw")
@@ -149,16 +160,13 @@ for subject_dir in subject_dirs:
             plt.savefig(f"{OUTPUT_ROOT}/plots/{subject_dir.name}/yaw_error.png", dpi=400)
         plt.show()
 
-        # F) Relative heading directions projected onto horizontal plane
+        # C) Relative heading directions projected onto horizontal plane
         plt.figure()
         xy = heading_rel_world_unit[:, :2]
         xy_norm = np.linalg.norm(xy, axis=1, keepdims=True)
         xy_unit = xy / np.maximum(xy_norm, 1e-12)
         xy_plot = xy_unit.copy()
-        # Flip both axes for intuitive viewing:
-        # xy_plot[:, 0] *= -1  # flip x (left/right)
-        # xy_plot[:, 1] *= -1  # flip y (forward/back)
-        step = max(1, len(xy_unit) // 7000)
+        step = max(1, len(xy_unit) // 7000) # limit to max 7000 datapoints
         cmap = sns.color_palette("crest_r", as_cmap=True)
         t_norm = (t_s - t_s.min()) / (t_s.max() - t_s.min() + 1e-12)
         for i in range(0, len(xy_plot), step):
@@ -169,7 +177,7 @@ for subject_dir in subject_dirs:
         plt.xlabel("rel world x")
         plt.ylabel("rel world y")
         plt.title(f"{subject_dir.name} – Heading directions")
-        # FIXED COLORBAR
+        # add fixed colorbar
         ax = plt.gca()
         norm = mcolors.Normalize(vmin=t_s.min(), vmax=t_s.max())
         sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
@@ -181,7 +189,7 @@ for subject_dir in subject_dirs:
             plt.savefig(f"{OUTPUT_ROOT}/plots/{subject_dir.name}/heading_direction_horizontal_plane.png", dpi=400)
         plt.show()
 
-        # E) Acceleration magnitude in world (g), 1 g is typical with head held still
+        # D) Acceleration magnitude in world (g), 1 g is typical with head held still
         plt.figure()
         sns.lineplot(x=t_s, y=acc_world_mag_g, linewidth=1.5)
         plt.axhline(1.0, linestyle="--", color="grey", alpha=0.8)
@@ -193,7 +201,7 @@ for subject_dir in subject_dirs:
             plt.savefig(f"{OUTPUT_ROOT}/plots/{subject_dir.name}/acceleration_magnitude_in_g.png", dpi=400)
         plt.show()
 
-        # D) Relative heading vector components (baseline-world)
+        # E) Relative heading vector components (baseline-world)
         plt.figure()
         plt.axhline(0, linestyle="--", color="grey", alpha=0.8)
         plt.axvline(t_s[baseline_idx], linestyle= "--", color="grey")
