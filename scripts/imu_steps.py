@@ -92,7 +92,7 @@ for subject_dir in subject_dirs:
     # Heading definition that matches CSV yaw:
     # axis = -Y in IMU coords, rotated into world,
     # yaw = atan2(world_y, world_x) + 90°, wrapped to [-180, 180]
-    heading_neutral_in_imu = np.array([0.0, -1.0, 0.0])
+    heading_neutral_in_imu = np.array([0.0,  1.0, 0.0])  # +Y ist forward
     # Heading direction relative to baseline orientation
     heading_rel_world = transform_imu_to_world(heading_neutral_in_imu, q_rel_wxyz)
     heading_rel_world_unit = heading_rel_world / np.maximum(
@@ -101,7 +101,7 @@ for subject_dir in subject_dirs:
     yaw_rel_derived = np.degrees(np.arctan2(
         heading_rel_world_unit[:, 1], heading_rel_world_unit[:, 0]
     ))
-    yaw_rel_derived = wrap_deg(yaw_rel_derived + 90.0)
+    yaw_rel_derived = wrap_deg(yaw_rel_derived - 90.0)
     # CSV yaw relative (baseline subtraction, wrapped)
     yaw_rel_csv = wrap_deg(csv_yaw_wrapped - csv_yaw_wrapped[baseline_idx])
 
@@ -126,7 +126,7 @@ for subject_dir in subject_dirs:
         # A) Yaw relative to baseline
         plt.figure()
         plt.axhline(0, linestyle="--", color="grey", alpha=0.8)
-        sns.lineplot(x=t_s, y=yaw_rel_csv, label="CSV yaw rel [deg]", linewidth=7, alpha=0.7)
+        sns.lineplot(x=t_s, y=yaw_rel_csv, label="CSV yaw rel [deg]", linewidth=1.75)
         sns.lineplot(x=t_s, y=yaw_rel_derived, label="Derived yaw rel [deg]", linewidth=1.75)
         plt.xlabel("time [s]")
         plt.ylabel("deg (relative to chosen baseline)")
@@ -156,8 +156,8 @@ for subject_dir in subject_dirs:
         xy_unit = xy / np.maximum(xy_norm, 1e-12)
         xy_plot = xy_unit.copy()
         # Flip both axes for intuitive viewing:
-        xy_plot[:, 0] *= -1  # flip x (left/right)
-        xy_plot[:, 1] *= -1  # flip y (forward/back)
+        # xy_plot[:, 0] *= -1  # flip x (left/right)
+        # xy_plot[:, 1] *= -1  # flip y (forward/back)
         step = max(1, len(xy_unit) // 7000)
         cmap = sns.color_palette("crest_r", as_cmap=True)
         t_norm = (t_s - t_s.min()) / (t_s.max() - t_s.min() + 1e-12)
