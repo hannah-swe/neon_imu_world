@@ -76,10 +76,15 @@ for subject_dir in subject_dirs:
     t_ns = df["timestamp [ns]"].to_numpy(dtype=np.int64)
     t_s = (t_ns - t_ns[0]) / 1e9
 
-    # 2.4) Pupil labs csv yaw for quality check (rotation over vertical axis;
+    # 2.4) Pupil labs csv euler for quality check (yaw = rotation over vertical axis; pitch = over sagital axis;
+    # roll = over coronal axis;
     # same information as in quaternion but readable for humans in degrees)
     csv_yaw = df["yaw [deg]"].to_numpy(dtype=float)
     csv_yaw_wrapped = wrap_deg(csv_yaw) # wrap it from -180 to 180 degrees
+    csv_roll = df["roll [deg]"].to_numpy(dtype=float)
+    csv_roll_wrapped = wrap_deg(csv_roll)
+    csv_pitch = df["pitch [deg]"].to_numpy(dtype=float)
+    csv_pitch_wrapped = wrap_deg(csv_pitch)
 
     # 2.5) Baseline timestamp for each subject
     baseline_ts = BASELINE_TS_NS[subject_dir.name]
@@ -104,14 +109,38 @@ for subject_dir in subject_dirs:
     heading_rel_world_unit = heading_rel_world / np.maximum(
         np.linalg.norm(heading_rel_world, axis=1, keepdims=True), 1e-12
     )
+    # csv and derived euler in relative heading position (baseline subtraction)
+    # derived yaw relative
     yaw_rel_derived = np.degrees(np.arctan2(
         heading_rel_world_unit[:, 1], heading_rel_world_unit[:, 0]
     ))
     yaw_rel_derived = wrap_deg(yaw_rel_derived - 90.0)
     yaw_rel_derived_unwrapped = np.unwrap(yaw_rel_derived)
-    # CSV yaw relative (baseline subtraction, wrapped)
+    # CSV yaw relative (baseline subtraction)
     yaw_rel_csv = wrap_deg(csv_yaw_wrapped - csv_yaw_wrapped[baseline_idx])
     yaw_rel_csv_unwrapped = unwrap_deg(yaw_rel_csv)
+    # derived roll relative
+    up_neutral_in_imu = np.array([0.0, 0.0, 1.0])
+    up_rel_world = transform_imu_to_world(up_neutral_in_imu, q_rel_wxyz)
+    up_rel_world_unit = up_rel_world / np.maximum(
+        np.linalg.norm(up_rel_world, axis=1, keepdims=True), 1e-12
+    )
+    roll_rel_derived = np.degrees(np.arctan2(
+        up_rel_world_unit[:, 0],
+        up_rel_world_unit[:, 2]
+    ))
+    roll_rel_derived = wrap_deg(roll_rel_derived)
+    roll_rel_derived_unwrapped = np.unwrap(roll_rel_derived)
+    # csv roll relative (baseline subtraction)
+    roll_rel_csv = wrap_deg(csv_roll_wrapped - csv_roll_wrapped[baseline_idx])
+    roll_rel_csv_unwrapped = unwrap_deg(roll_rel_csv)
+    # derived pitch relative
+    pitch_rel_derived = np.degrees(np.arcsin(heading_rel_world_unit[:, 2]))
+    pitch_rel_derived = wrap_deg(pitch_rel_derived)
+    pitch_rel_derived_unwrapped = np.unwrap(pitch_rel_derived)
+    # csv pitch relative (baseline subtraction)
+    pitch_rel_csv = wrap_deg(csv_pitch_wrapped - csv_pitch_wrapped[baseline_idx])
+    pitch_rel_csv_unwrapped = unwrap_deg(pitch_rel_csv)
 
     # 2.8) Error between relative derived heading angle and CSV yaw (should be ~0;
     # is my heading interpretation the same as pupil labs yaw?)
@@ -160,6 +189,34 @@ for subject_dir in subject_dirs:
             plt.savefig(f"{OUTPUT_ROOT}/plots/{subject_dir.name}/yaw_error.png", dpi=400)
         plt.show()
 
+        # A) pitch relative to baseline
+        plt.figure()
+        plt.axhline(0, linestyle="--", color="grey", alpha=0.8)
+        sns.lineplot(x=t_s, y=pitch_rel_csv_unwrapped, label="CSV pitch rel [deg]", linewidth=1.75)
+        sns.lineplot(x=t_s, y=pitch_rel_derived_unwrapped, label="Derived pitch rel [deg]", linewidth=1.75)
+        plt.xlabel("time [s]")
+        plt.ylabel("deg (relative to chosen baseline)")
+        plt.title(f"{subject_dir.name} – Relative pitch")
+        plt.legend()
+        sns.despine()
+        if SAVE_PLOTS:
+            plt.savefig(f"{OUTPUT_ROOT}/plots/{subject_dir.name}/relative_pitch_baseline.png", dpi=400)
+        plt.show()
+
+        # A) roll relative to baseline
+        plt.figure()
+        plt.axhline(0, linestyle="--", color="grey", alpha=0.8)
+        sns.lineplot(x=t_s, y=roll_rel_csv_unwrapped, label="CSV roll rel [deg]", linewidth=1.75)
+        sns.lineplot(x=t_s, y=roll_rel_derived_unwrapped, label="Derived roll rel [deg]", linewidth=1.75)
+        plt.xlabel("time [s]")
+        plt.ylabel("deg (relative to chosen baseline)")
+        plt.title(f"{subject_dir.name} – Relative roll")
+        plt.legend()
+        sns.despine()
+        if SAVE_PLOTS:
+            plt.savefig(f"{OUTPUT_ROOT}/plots/{subject_dir.name}/relative_roll_baseline.png", dpi=400)
+        plt.show()
+
         # C) Relative heading directions projected onto horizontal plane
         plt.figure()
         xy = heading_rel_world_unit[:, :2]
@@ -193,9 +250,10 @@ for subject_dir in subject_dirs:
         plt.figure()
         sns.lineplot(x=t_s, y=acc_world_mag_g, linewidth=1.5)
         plt.axhline(1.0, linestyle="--", color="grey", alpha=0.8)
+        plt.axvline(t_s[baseline_idx], linestyle="--", color="grey")
         plt.xlabel("time [s]")
-        plt.ylabel("||acc|| [g]")
-        plt.title(f"{subject_dir.name} – Acc magnitude (world) [g]")
+        plt.ylabel("acc [g]")
+        plt.title(f"{subject_dir.name} – Acc magnitude [g]")
         sns.despine()
         if SAVE_PLOTS:
             plt.savefig(f"{OUTPUT_ROOT}/plots/{subject_dir.name}/acceleration_magnitude_in_g.png", dpi=400)
@@ -215,4 +273,20 @@ for subject_dir in subject_dirs:
         sns.despine()
         if SAVE_PLOTS:
             plt.savefig(f"{OUTPUT_ROOT}/plots/{subject_dir.name}/heading_vectors_relative.png",dpi=400)
+        plt.show()
+
+        # E) Relative euler angles yaw, pitch, roll (baseline-world)
+        plt.figure()
+        plt.axhline(0, linestyle="--", color="grey", alpha=0.8)
+        plt.axvline(t_s[baseline_idx], linestyle= "--", color="grey")
+        sns.lineplot( x=t_s, y=yaw_rel_csv_unwrapped, label="rel yaw", linewidth=2.5)
+        sns.lineplot(x=t_s, y=roll_rel_csv_unwrapped, label="rel roll", linewidth=2.5)
+        sns.lineplot(x=t_s, y=pitch_rel_csv_unwrapped, label="rel pitch", linewidth=2.5)
+        plt.xlabel("time [s]")
+        plt.ylabel("deg (relative)")
+        plt.title(f"{subject_dir.name} – Euler angles (relative to baseline)")
+        plt.legend()
+        sns.despine()
+        if SAVE_PLOTS:
+            plt.savefig(f"{OUTPUT_ROOT}/plots/{subject_dir.name}/euler_angles_relative.png",dpi=400)
         plt.show()
