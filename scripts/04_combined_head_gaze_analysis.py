@@ -37,7 +37,13 @@ BASELINE_TS_NS = {
     "sub-998": 1771841527840486602,
     "sub-999": 1771841127283972967,
 }
-# ----------------------------
+
+# Time windows per subject (seconds relative to start of gaze.csv)
+TIME_WINDOWS_S = {
+    "sub-997": (196.0, 210.0),
+    "sub-998": (3.5, 15.5),
+    "sub-999": (1.0, 13.0),
+}
 
 
 def wrap_deg(a: np.ndarray) -> np.ndarray:
@@ -130,6 +136,22 @@ for subject_dir in subject_dirs:
     gaze_az_scene = gaze_df["azimuth [deg]"].to_numpy(float)
     gaze_el_scene = gaze_df["elevation [deg]"].to_numpy(float)
 
+    # Restrict analysis to time interval
+    t_start_s, t_end_s = TIME_WINDOWS_S[subject_dir.name]
+
+    mask = (gaze_t_s >= t_start_s) & (gaze_t_s <= t_end_s)
+
+    gaze_t_ns = gaze_t_ns[mask]
+    gaze_t_s = gaze_t_s[mask]
+    gaze_az_scene = gaze_az_scene[mask]
+    gaze_el_scene = gaze_el_scene[mask]
+
+    print(f"  Gaze samples in interval [{t_start_s}, {t_end_s}] s:", len(gaze_t_s))
+
+    if len(gaze_t_s) == 0:
+        print("  SKIP: no gaze samples in interval")
+        continue
+
     # 5) Match gaze samples to IMU samples
     imu_idx_for_gaze = np.searchsorted(imu_t_ns, gaze_t_ns, side="left")
     imu_idx_for_gaze = np.clip(imu_idx_for_gaze, 0, len(imu_t_ns) - 1)
@@ -189,7 +211,7 @@ for subject_dir in subject_dirs:
         sns.lineplot(x=gaze_t_s, y=eye_yaw_rel, label="eye yaw rel", linewidth=1.75, alpha=1)
         sns.lineplot(x=gaze_t_s, y=gaze_world_az_rel_to_baseline, label="combined gaze yaw rel", linewidth=1.75, alpha=1)
         plt.axhline(0, linestyle="--", alpha=0.5, color="grey")
-        plt.axvline(imu_t_s[baseline_idx], linestyle="--", alpha=0.5, color="grey")
+        # plt.axvline(imu_t_s[baseline_idx], linestyle="--", alpha=0.5, color="grey")
         plt.xlabel("time [s]")
         plt.ylabel("deg (relative)")
         plt.title(f"{subject_dir.name} – Head and eye yaw vs combined gaze yaw")
