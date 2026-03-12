@@ -15,7 +15,6 @@ def spherical_to_cartesian_scene(elevations_deg: np.ndarray, azimuths_deg: np.nd
 
     # Convert to a more traditional spherical coordinate convention (as in docs)
     elevations_rad += np.pi / 2
-
     azimuths_rad *= -1.0
     azimuths_rad += np.pi / 2
 
