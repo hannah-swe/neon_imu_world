@@ -23,13 +23,13 @@ SUBJECT_GLOB = "sub-*"
 GAZE_FILENAME = "gaze.csv"
 
 SHOW_PLOTS = True
-SAVE_PLOTS = True
+SAVE_PLOTS = False
 
 # Zeitfenster pro Subject in Sekunden relativ zum Start der gaze.csv
 TIME_WINDOWS_S = {
     "sub-997": (196.0, 210.0),
     "sub-998": (3.5, 15.5),
-    "sub-999": (2.0, 12.0),
+    "sub-999": (1.0, 13.0),
 }
 # ----------------------------
 
