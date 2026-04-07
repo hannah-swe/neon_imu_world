@@ -9,7 +9,11 @@ from scipy.spatial.transform import Rotation as R
 
 from neon_imu.loaders import load_imu_csv
 from neon_imu.plot_config import setup_plot_style
-from neon_imu.transforms import quaternion_norms, transform_imu_to_world
+from neon_imu.transforms import (
+    interpolate_quaternions_wxyz,
+    quaternion_norms,
+    transform_imu_to_world,
+)
 from neon_imu.gaze_transforms import (
     spherical_to_cartesian_scene,
     cartesian_to_spherical_world,
@@ -30,7 +34,7 @@ IMU_FILENAME = "imu.csv"
 GAZE_FILENAME = "gaze.csv"
 
 SHOW_PLOTS = True
-SAVE_PLOTS = True
+SAVE_PLOTS = False
 
 BASELINE_TS_NS = {
     "sub-997": 1767524149769973658,
@@ -40,11 +44,11 @@ BASELINE_TS_NS = {
 
 # Time windows per subject (seconds relative to start of gaze.csv)
 TIME_WINDOWS_S = {
-    "sub-997": (196.0, 210.0),
-    "sub-998": (3.5, 15.5),
-    "sub-999": (1.0, 13.0),
-}
 
+}
+#     "sub-997": (196.0, 210.0),
+#     "sub-998": (3.5, 15.5),
+#     "sub-999": (1.0, 13.0),
 
 def wrap_deg(a: np.ndarray) -> np.ndarray:
     return (a + 180) % 360 - 180
@@ -136,28 +140,47 @@ for subject_dir in subject_dirs:
     gaze_az_scene = gaze_df["azimuth [deg]"].to_numpy(float)
     gaze_el_scene = gaze_df["elevation [deg]"].to_numpy(float)
 
-    # Restrict analysis to time interval
-    t_start_s, t_end_s = TIME_WINDOWS_S[subject_dir.name]
+    t_start_s, t_end_s = TIME_WINDOWS_S.get(subject_dir.name, (gaze_t_s[0], gaze_t_s[-1]))
+    time_mask = (gaze_t_s >= t_start_s) & (gaze_t_s <= t_end_s)
 
-    mask = (gaze_t_s >= t_start_s) & (gaze_t_s <= t_end_s)
+    gaze_t_ns = gaze_t_ns[time_mask]
+    gaze_t_s = gaze_t_s[time_mask]
+    gaze_x_px = gaze_x_px[time_mask]
+    gaze_y_px = gaze_y_px[time_mask]
+    gaze_az_scene = gaze_az_scene[time_mask]
+    gaze_el_scene = gaze_el_scene[time_mask]
 
-    gaze_t_ns = gaze_t_ns[mask]
-    gaze_t_s = gaze_t_s[mask]
-    gaze_az_scene = gaze_az_scene[mask]
-    gaze_el_scene = gaze_el_scene[mask]
-
-    print(f"  Gaze samples in interval [{t_start_s}, {t_end_s}] s:", len(gaze_t_s))
+    print(f"  Gaze samples in interval [{t_start_s}, {t_end_s}] s: {len(gaze_t_s)}")
 
     if len(gaze_t_s) == 0:
         print("  SKIP: no gaze samples in interval")
         continue
 
-    # 5) Match gaze samples to IMU samples
-    imu_idx_for_gaze = np.searchsorted(imu_t_ns, gaze_t_ns, side="left")
-    imu_idx_for_gaze = np.clip(imu_idx_for_gaze, 0, len(imu_t_ns) - 1)
-    dt_ms = np.abs(imu_t_ns[imu_idx_for_gaze] - gaze_t_ns) / 1e6
-    print(f"  Gaze->IMU alignment dt [ms]: median={np.median(dt_ms):.3f}, max={np.max(dt_ms):.3f}")
-    gaze_q_rel_wxyz = q_rel_wxyz[imu_idx_for_gaze]
+    # 5) Restrict to the overlap and resample IMU orientation onto gaze timestamps
+    overlap_mask = (gaze_t_ns >= imu_t_ns[0]) & (gaze_t_ns <= imu_t_ns[-1])
+    num_outside_overlap = int((~overlap_mask).sum())
+    if num_outside_overlap:
+        print(f"  Dropping {num_outside_overlap} gaze samples outside IMU time span")
+
+    gaze_t_ns = gaze_t_ns[overlap_mask]
+    gaze_t_s = gaze_t_s[overlap_mask]
+    gaze_x_px = gaze_x_px[overlap_mask]
+    gaze_y_px = gaze_y_px[overlap_mask]
+    gaze_az_scene = gaze_az_scene[overlap_mask]
+    gaze_el_scene = gaze_el_scene[overlap_mask]
+
+    if len(gaze_t_s) == 0:
+        print("  SKIP: no overlapping gaze samples after IMU alignment")
+        continue
+
+    nearest_idx = np.searchsorted(imu_t_ns, gaze_t_ns, side="left")
+    nearest_idx = np.clip(nearest_idx, 0, len(imu_t_ns) - 1)
+    dt_ms = np.abs(imu_t_ns[nearest_idx] - gaze_t_ns) / 1e6
+    print(
+        f"  Nearest-sample gaze->IMU dt [ms]: median={np.median(dt_ms):.3f}, max={np.max(dt_ms):.3f}"
+    )
+
+    gaze_q_rel_wxyz = interpolate_quaternions_wxyz(imu_t_ns, q_rel_wxyz, gaze_t_ns)
 
     # 6) Gaze in scene -> relative world
     gaze_scene_dirs = spherical_to_cartesian_scene(gaze_el_scene, gaze_az_scene)
@@ -193,9 +216,9 @@ for subject_dir in subject_dirs:
     )
 
     # 7) Eye contribution (combined gaze - head direction)
-    # Interpolate head signals onto gaze timebase
-    head_yaw_rel_on_gaze = np.interp(gaze_t_s, imu_t_s, head_yaw_rel)
-    head_pitch_rel_on_gaze = np.interp(gaze_t_s, imu_t_s, head_pitch_rel)
+    # Interpolate head signals onto the same gaze timestamps used for quaternion resampling
+    head_yaw_rel_on_gaze = np.interp(gaze_t_ns.astype(np.float64), imu_t_ns.astype(np.float64), head_yaw_rel)
+    head_pitch_rel_on_gaze = np.interp(gaze_t_ns.astype(np.float64), imu_t_ns.astype(np.float64), head_pitch_rel)
 
     # Approximate eye contribution relative to head
     eye_yaw_rel = wrap_deg(gaze_world_az_rel_to_baseline - head_yaw_rel_on_gaze)
